@@ -20,7 +20,7 @@ const UPDATE_INTERVAL = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 // Function to log in and update cookies
 async function updateCookies() {
     const browser = await puppeteer.connect({
-  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=2TLQnuvnCOSvCgf2a267c85129021c7041a32954683fb1b66&proxy=residential`,
+  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=2TLQnuvnCOSvCgf1752d7888afe5d6dbd42adf10b22fd43dd&proxy=residential`,
 });
 
     const page = await browser.newPage();
@@ -173,7 +173,7 @@ async function uploadToTeraBox(filePath, fileName) {
 
             // Launch a new isolated browser instance
             const browser = await puppeteer.connect({
-  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=${process.env.BROWSERLESS_TOKEN}&proxy=residential`,
+  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=2TLQnuvnCOSvCgf1752d7888afe5d6dbd42adf10b22fd43dd&proxy=residential`,
   defaultViewport: null,
 });
 
