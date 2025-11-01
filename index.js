@@ -19,40 +19,74 @@ const UPDATE_INTERVAL = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 
 // Function to log in and update cookies
 async function updateCookies() {
-  console.log("Connecting to remote Chrome (Browserless)...");
+    const browser = await puppeteer.launch({
+        headless: 'new',  // Use 'new' for improved headless mode
+        protocolTimeout: 180000, // Increased protocol timeout for stability
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, // Use default if not set
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-features=IsolateOrigins,site-per-process', // More stable site isolation
+            '--disable-web-security',
+            '--disable-http2', // Disable HTTP/2 if causing issues
+            '--proxy-server="direct://"',
+            '--proxy-bypass-list=*',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-accelerated-2d-canvas',
+            '--disable-ipc-flooding-protection',
+            '--enable-features=NetworkService,NetworkServiceInProcess',
+        ],
+        ignoreDefaultArgs: ['--disable-extensions'], // Allow extensions if needed
+        defaultViewport: null, // Avoid viewport resizing issues
+    });
+    const page = await browser.newPage();
 
-  const browser = await puppeteer.connect({
-    browserWSEndpoint: `wss://production-sfo.browserless.io/?token=${process.env.BROWSERLESS_TOKEN}&proxy=residential`,
-    defaultViewport: null,
-  });
+    console.log('Opening TeraBox...');
+    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-  const page = await browser.newPage();
-  console.log('Opening TeraBox...');
-  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    // Click the login button
+    await page.waitForSelector('.lgoin-btn', { timeout: 10000 });
+    await page.click('.lgoin-btn');
 
-  await page.waitForSelector('.lgoin-btn', { timeout: 10000 });
-  await page.click('.lgoin-btn');
+    // Wait for the "Other Login Options" section
+    await page.waitForSelector('.other-item', { timeout: 10000 });
 
-  await page.waitForSelector('.other-item', { timeout: 10000 });
-  await page.evaluate(() => {
-    document.querySelectorAll('.other-item div')[1].click();
-  });
+    // Click the second div inside .other-item (email login)
+    await page.evaluate(() => {
+        document.querySelectorAll('.other-item div')[1].click();
+    });
 
-  await page.waitForSelector('#email-input', { timeout: 10000 });
-  await page.waitForSelector('#pwd-input', { timeout: 10000 });
-  await page.type('#email-input', EMAIL, { delay: 100 });
-  await page.type('#pwd-input', PASSWORD, { delay: 100 });
-  await page.click('.btn-class-login');
-  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
+    // Wait for email/password fields
+    await page.waitForSelector('#email-input', { timeout: 10000 });
+    await page.waitForSelector('#pwd-input', { timeout: 10000 });
+    await page.waitForSelector('.btn-class-login', { timeout: 10000 });
 
-  const cookies = await page.cookies();
-  await fs.promises.writeFile(COOKIES_FILE, JSON.stringify(cookies, null, 2));
-  console.log(`✅ Cookies saved to ${COOKIES_FILE}`);
+    // Fill login details
+    await page.type('#email-input', EMAIL, { delay: 100 });
+    await page.type('#pwd-input', PASSWORD, { delay: 100 });
 
-  await browser.close();
+    // Click login button
+    await page.click('.btn-class-login');
+
+    // Wait for login to complete
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
+
+    console.log('Login successful! Saving cookies...');
+    const cookies = await page.cookies();
+    const fs = require('fs'); // Use the standard fs module
+
+await fs.promises.writeFile(COOKIES_FILE, JSON.stringify(cookies, null, 2));
+
+
+
+    console.log(`Cookies updated and saved to ${COOKIES_FILE}`);
+    await browser.close();
 }
-
-const SELF_CHECK_URL = "https://willing-shanda-marwanelghzali11-e8022ba9.koyeb.app/";
+const SELF_CHECK_URL = "https://teraboxupload1-production.up.railway.app/hi";
 
 async function checkServerHealth() {
     try {
@@ -128,30 +162,11 @@ async function uploadToTeraBox(filePath, fileName) {
             console.log(`🔄 Attempt ${attempt + 1}/${MAX_RETRIES} for file: ${fileName} (Request ID: ${requestId})`);
 
             // Launch a new isolated browser instance
-            const browser = await puppeteer.launch({
-                headless: 'new',  // Use 'new' for improved headless mode
-                protocolTimeout: 180000, // Increased protocol timeout for stability
-                executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, // Use default if not set
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--disable-features=IsolateOrigins,site-per-process', // More stable site isolation
-                    '--disable-web-security',
-                    '--disable-http2', // Disable HTTP/2 if causing issues
-                    '--proxy-server="direct://"',
-                    '--proxy-bypass-list=*',
-                    '--disable-background-timer-throttling',
-                    '--disable-backgrounding-occluded-windows',
-                    '--disable-renderer-backgrounding',
-                    '--disable-accelerated-2d-canvas',
-                    '--disable-ipc-flooding-protection',
-                    '--enable-features=NetworkService,NetworkServiceInProcess',
-                ],
-                ignoreDefaultArgs: ['--disable-extensions'], // Allow extensions if needed
-                defaultViewport: null, // Avoid viewport resizing issues
-            });
+            const browser = await puppeteer.connect({
+  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=${process.env.BROWSERLESS_TOKEN}&proxy=residential`,
+  defaultViewport: null,
+});
+
 
             uploadPage = await browser.newPage();
             await uploadPage.setViewport({ width: 1280, height: 800 });
@@ -545,4 +560,3 @@ const server = app.listen(port, () => {
 });
 server.timeout = 600000; // 10 minutes
 server.headersTimeout = 650000; // Increase header timeout
-
