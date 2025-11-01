@@ -20,7 +20,7 @@ const UPDATE_INTERVAL = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 // Function to log in and update cookies
 async function updateCookies() {
     const browser = await puppeteer.connect({
-  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=SCtsRZKaUy9UsBe65e9925403d452f8a0f55a8129f&proxy=residential`,
+  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=2TLQnuvnCOSvCgf2a267c85129021c7041a32954683fb1b66&proxy=residential`,
 });
 
     const page = await browser.newPage();
