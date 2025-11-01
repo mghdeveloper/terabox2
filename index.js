@@ -29,8 +29,38 @@ async function updateCookies() {
     await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
     // Click the login button
-    await page.waitForSelector('.lgoin-btn', { timeout: 10000 });
-    await page.click('.lgoin-btn');
+// Small delay to ensure the page has loaded
+await new Promise(resolve => setTimeout(resolve, 2000));
+
+// Try to find the login button by class first
+const loginButtonSelector = '.lgoin-btn';
+let loginButtonFound = await page.$(loginButtonSelector);
+
+if (loginButtonFound) {
+    console.log("✅ Login button found by class. Clicking...");
+    await loginButtonFound.click();
+} else {
+    console.log("⚠️ Login button class not found, searching by text...");
+
+    // Use evaluateHandle to find a div with innerText 'Login' (case-insensitive)
+    const loginButtonByTextHandle = await page.evaluateHandle(() => {
+        const allDivs = Array.from(document.querySelectorAll('div'));
+        return allDivs.find(d => d.innerText.trim().toLowerCase() === 'login') || null;
+    });
+
+    if (loginButtonByTextHandle) {
+        const element = loginButtonByTextHandle.asElement();
+        if (element) {
+            console.log("✅ Login button found by text. Clicking...");
+            await element.click();
+        } else {
+            throw new Error("❌ Login button handle found but no element attached.");
+        }
+    } else {
+        throw new Error("❌ Login button not found by class or text!");
+    }
+}
+
 
     // Wait for the "Other Login Options" section
     await page.waitForSelector('.other-item', { timeout: 10000 });
