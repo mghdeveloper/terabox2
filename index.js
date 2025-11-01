@@ -182,7 +182,7 @@ async function uploadToTeraBox(filePath, fileName) {
 
             // Launch a new isolated browser instance
             const browser = await puppeteer.connect({
-  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=SCtsRZKaUy9UsBe65e9925403d452f8a0f55a8129f&proxy=residential`,
+  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=2TLQnuvnCOSvCgf1752d7888afe5d6dbd42adf10b22fd43dd&proxy=residential`,
 });
 
             uploadPage = await browser.newPage();
