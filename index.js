@@ -19,73 +19,39 @@ const UPDATE_INTERVAL = 3 * 24 * 60 * 60 * 1000; // 3 days in milliseconds
 
 // Function to log in and update cookies
 async function updateCookies() {
-    const browser = await puppeteer.launch({
-        headless: 'new',  // Use 'new' for improved headless mode
-        protocolTimeout: 180000, // Increased protocol timeout for stability
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined, // Use default if not set
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--disable-features=IsolateOrigins,site-per-process', // More stable site isolation
-            '--disable-web-security',
-            '--disable-http2', // Disable HTTP/2 if causing issues
-            '--proxy-server="direct://"',
-            '--proxy-bypass-list=*',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-accelerated-2d-canvas',
-            '--disable-ipc-flooding-protection',
-            '--enable-features=NetworkService,NetworkServiceInProcess',
-        ],
-        ignoreDefaultArgs: ['--disable-extensions'], // Allow extensions if needed
-        defaultViewport: null, // Avoid viewport resizing issues
-    });
-    const page = await browser.newPage();
+  console.log("Connecting to remote Chrome (Browserless)...");
 
-    console.log('Opening TeraBox...');
-    await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
+  const browser = await puppeteer.connect({
+    browserWSEndpoint: `wss://production-sfo.browserless.io/?token=${process.env.BROWSERLESS_TOKEN}&proxy=residential`,
+    defaultViewport: null,
+  });
 
-    // Click the login button
-    await page.waitForSelector('.lgoin-btn', { timeout: 10000 });
-    await page.click('.lgoin-btn');
+  const page = await browser.newPage();
+  console.log('Opening TeraBox...');
+  await page.goto(LOGIN_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-    // Wait for the "Other Login Options" section
-    await page.waitForSelector('.other-item', { timeout: 10000 });
+  await page.waitForSelector('.lgoin-btn', { timeout: 10000 });
+  await page.click('.lgoin-btn');
 
-    // Click the second div inside .other-item (email login)
-    await page.evaluate(() => {
-        document.querySelectorAll('.other-item div')[1].click();
-    });
+  await page.waitForSelector('.other-item', { timeout: 10000 });
+  await page.evaluate(() => {
+    document.querySelectorAll('.other-item div')[1].click();
+  });
 
-    // Wait for email/password fields
-    await page.waitForSelector('#email-input', { timeout: 10000 });
-    await page.waitForSelector('#pwd-input', { timeout: 10000 });
-    await page.waitForSelector('.btn-class-login', { timeout: 10000 });
+  await page.waitForSelector('#email-input', { timeout: 10000 });
+  await page.waitForSelector('#pwd-input', { timeout: 10000 });
+  await page.type('#email-input', EMAIL, { delay: 100 });
+  await page.type('#pwd-input', PASSWORD, { delay: 100 });
+  await page.click('.btn-class-login');
+  await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
 
-    // Fill login details
-    await page.type('#email-input', EMAIL, { delay: 100 });
-    await page.type('#pwd-input', PASSWORD, { delay: 100 });
+  const cookies = await page.cookies();
+  await fs.promises.writeFile(COOKIES_FILE, JSON.stringify(cookies, null, 2));
+  console.log(`✅ Cookies saved to ${COOKIES_FILE}`);
 
-    // Click login button
-    await page.click('.btn-class-login');
-
-    // Wait for login to complete
-    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 60000 });
-
-    console.log('Login successful! Saving cookies...');
-    const cookies = await page.cookies();
-    const fs = require('fs'); // Use the standard fs module
-
-await fs.promises.writeFile(COOKIES_FILE, JSON.stringify(cookies, null, 2));
-
-
-
-    console.log(`Cookies updated and saved to ${COOKIES_FILE}`);
-    await browser.close();
+  await browser.close();
 }
+
 const SELF_CHECK_URL = "https://willing-shanda-marwanelghzali11-e8022ba9.koyeb.app/";
 
 async function checkServerHealth() {
