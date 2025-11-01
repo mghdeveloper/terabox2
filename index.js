@@ -22,7 +22,6 @@ async function updateCookies() {
     const browser = await puppeteer.connect({
   browserWSEndpoint: `wss://production-sfo.browserless.io/?token=2TLQnuvnCOSvCgf1752d7888afe5d6dbd42adf10b22fd43dd&proxy=residential`,
 });
-
     const page = await browser.newPage();
 
     console.log('Opening TeraBox...');
@@ -60,7 +59,6 @@ if (loginButtonFound) {
         throw new Error("❌ Login button not found by class or text!");
     }
 }
-
 
     // Wait for the "Other Login Options" section
     await page.waitForSelector('.other-item', { timeout: 10000 });
@@ -112,9 +110,20 @@ setInterval(checkServerHealth, 10000);
 
 // Function to schedule cookie updates every 3 days
 async function scheduleCookieUpdates() {
-    console.log('Cookie updater started. Running every 3 days...');
-    await updateCookies(); // Run once immediately
-    setInterval(updateCookies, UPDATE_INTERVAL); // Schedule updates every 3 days
+  console.log('Cookie updater started. Running every 3 days...');
+  try {
+    await updateCookies();
+  } catch (err) {
+    console.error('❌ Initial cookie update failed:', err);
+  }
+
+  setInterval(async () => {
+    try {
+      await updateCookies();
+    } catch (err) {
+      console.error('❌ Scheduled cookie update failed:', err);
+    }
+  }, UPDATE_INTERVAL);
 }
 
 // Start the updater
@@ -173,10 +182,8 @@ async function uploadToTeraBox(filePath, fileName) {
 
             // Launch a new isolated browser instance
             const browser = await puppeteer.connect({
-  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=2TLQnuvnCOSvCgf1752d7888afe5d6dbd42adf10b22fd43dd&proxy=residential`,
-  defaultViewport: null,
+  browserWSEndpoint: `wss://production-sfo.browserless.io/?token=SCtsRZKaUy9UsBe65e9925403d452f8a0f55a8129f&proxy=residential`,
 });
-
 
             uploadPage = await browser.newPage();
             await uploadPage.setViewport({ width: 1280, height: 800 });
@@ -350,77 +357,64 @@ console.log("✅ Upload finished.");
 
     return { success: false, error: "Upload failed after multiple attempts." };
 }
-const { exec } = require('child_process');
 
-app.get('/stream', async (req, res) => {
-    const { filename } = req.query;
-    if (!filename) {
-        return res.status(400).json({ success: false, message: "Missing 'filename' query parameter." });
+app.get("/stream", async (req, res) => {
+  const { filename } = req.query;
+  if (!filename) {
+    return res.status(400).json({ success: false, message: "Missing 'filename' query parameter." });
+  }
+
+    const COOKIE_STRING = `browserid=CpaFTbGSs3HeO3SFHcqa4CRzaT4vlD7HVDl5Og-UF0SptpDVu63cnwl3XBE=; lang=en; TSID=fu79RRYes2WHH3xyF7g4lGDdndhCu0yc; Lda_aKUr6BGRn=hipodi.com/r/v2?; Lda_aKUr6BGRr=0; __bid_n=19a3f392d37b8c5ef14207; _ga=GA1.1.759595362.1761997305; _gcl_au=1.1.1032610337.1761997774; _tt_enable_cookie=1; _ttp=01K8ZM0S39F70JJ3K660B29EDH_.tt.1; _fbp=fb.1.1761997776154.299446426197481242; ttcsid=1761997775983::SPyfDApALJW-Pws-nAfo.1.1761998289016.0; ttcsid_CE7B8VRC77U8BHMEOA70=1761997775982::xUMYX9WAgpnqtAfqgWEe.1.1761998289017.0; _ga_RSNVN63CM3=GS2.1.s1761997776$o1$g1$t1761998292$j56$l0$h0; __stripe_mid=e2910684-cbb3-487c-bf9b-0fff1c0ed4936d0f49; ndus=YSIVdgCteHuikmQATvl7LR0dHGYsJ9QePZkklNe1; _rdt_uuid=1761998627204.7a54da87-b299-4993-a64a-808e3b2bb18d; _rdt_em=:92c86f9fd14070f987ca63bb6e77603e3995ffca29dacb7b7f63b627e203828e,dcae6590804a25d28c3636bafb2ec06d021a7e425c0178c6664895fe7be54c2b,63d71941f4a6e80cb503e63d5d406ed7879ebeb9532741d75316c71c3079f20b; _ga_HSVH9T016H=GS2.1.s1761997774$o1$g1$t1761998634$j52$l0$h0; Fm_kZf8ZQvmX=1; Ac_aqK8DtrDS=10; g_state={"i_l":0,"i_ll":1762003456326,"i_b":"iWjWAqGE/e2HmMNKNsoqq1t/138HVu6We32lPylQvlQ"}; ndut_fmt=8AC62D9DE2C083FFD9D1A8FA80A09F25626DDD0CDEB2C49328769DFD561561E9; _ga_06ZNKL8C2E=GS2.1.s1762003455$o2$g1$t1762004454$j59$l0$h0`;
+
+  const resolutions = ["M3U8_AUTO_360", "M3U8_AUTO_480", "M3U8_AUTO_720", "M3U8_AUTO_1080"];
+  const cacheDir = path.join(__dirname, "m3u8_cache");
+
+  // Ensure cache directory exists
+  if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
+
+  const results = {};
+
+  try {
+    for (const resolution of resolutions) {
+      const streamURL = `https://www.1024tera.com/api/streaming?path=${encodeURIComponent("/" + filename)}&app_id=250528&clienttype=0&type=${resolution}&vip=0`;
+
+      console.log(`🌐 Fetching ${resolution}...`);
+
+      try {
+        const response = await axios.get(streamURL, {
+          headers: {
+            Cookie: COOKIE_STRING,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
+            Accept: "*/*",
+            Referer: "https://www.1024tera.com/",
+          },
+          responseType: "text",
+          validateStatus: () => true
+        });
+
+        // Save M3U8 content to file only if we got content
+        if (response.status === 200 && response.data.startsWith("#EXTM3U")) {
+          const safeFilename = filename.replace(/[^a-z0-9_\-]/gi, "_"); // sanitize
+          const filePath = path.join(cacheDir, `${safeFilename}_${resolution}.m3u8`);
+          fs.writeFileSync(filePath, response.data, "utf-8");
+          console.log(`✅ Saved M3U8: ${filePath}`);
+
+          results[resolution] = { file: filePath, status: response.status, url: streamURL };
+        } else {
+          console.warn(`⚠️ No M3U8 content found for ${resolution} (status: ${response.status})`);
+          results[resolution] = { file: null, status: response.status, url: streamURL };
+        }
+      } catch (err) {
+        console.error(`❌ Error fetching ${resolution}: ${err.message}`);
+        results[resolution] = { file: null, error: err.message, url: streamURL };
+      }
     }
 
-    const resolutions = ['M3U8_AUTO_360', 'M3U8_AUTO_480', 'M3U8_AUTO_720', 'M3U8_AUTO_1080'];
-    const links = {};
-    const browser = await puppeteer.launch({
-        headless: 'new',
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-        ]
-    });
-
-    try {
-        const page = await browser.newPage();
-
-        // Load cookies
-        if (fs.existsSync(COOKIES_PATH)) {
-            const cookies = JSON.parse(fs.readFileSync(COOKIES_PATH, 'utf8'));
-            await page.setCookie(...cookies);
-        }
-
-        // Iterate through all resolutions
-        for (const resolution of resolutions) {
-            const streamURL = `https://www.1024tera.com/api/streaming?path=${encodeURIComponent('/' + filename)}&app_id=250528&clienttype=0&type=${resolution}&vip=0`;
-            console.log(`🌐 Accessing stream: ${streamURL}`);
-
-            await page.goto(streamURL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-            const responseBody = await page.evaluate(() => document.body.innerText);
-            try {
-                const json = JSON.parse(responseBody);
-                if (json && json.url) {
-                    links[resolution] = json.url;
-
-                    // Optional: Download using ffmpeg
-                    const tempFilePath = path.join(__dirname, 'downloads', `${Date.now()}-${resolution}.mp4`);
-                    const command = `ffmpeg -y -i "${json.url}" -c copy "${tempFilePath}"`;
-
-                    console.log(`⬇️ Starting download for ${resolution}...`);
-                    await new Promise((resolve, reject) => {
-                        exec(command, (error, stdout, stderr) => {
-                            if (error) {
-                                console.error(`❌ ffmpeg error [${resolution}]:`, error.message);
-                                return reject(error);
-                            }
-                            console.log(`✅ Download complete [${resolution}]:`, tempFilePath);
-                            links[`${resolution}_file`] = tempFilePath;
-                            resolve();
-                        });
-                    });
-                } else {
-                    console.warn(`⚠️ No URL found for ${resolution}`);
-                }
-            } catch (e) {
-                console.error(`❌ Failed to parse JSON for ${resolution}:`, e.message);
-            }
-        }
-
-        await browser.close();
-        res.json({ success: true, links });
-    } catch (error) {
-        await browser.close();
-        console.error("❌ Streaming route error:", error);
-        res.status(500).json({ success: false, message: "Failed to retrieve stream links." });
-    }
+    res.json({ success: true, cachedFiles: results });
+  } catch (err) {
+    console.error("❌ Stream route error:", err.message);
+    res.status(500).json({ success: false, message: "Stream retrieval failed." });
+  }
 });
 
 app.post('/upload', (req, res) => {
@@ -428,15 +422,12 @@ app.post('/upload', (req, res) => {
     let loggedMB = 0;
     const originalFilename = req.headers['filename']; // Get filename from header
 
-if (!originalFilename) {
-    return res.status(400).json({ success: false, message: "Filename is required in headers." });
-}
+    if (!originalFilename) {
+        return res.status(400).json({ success: false, message: "Filename is required in headers." });
+    }
 
-const filePath = path.join(uploadDir, originalFilename); // Use filename as is
-
-
-
-    const writeStream = fs.createWriteStream(filePath);
+    const tempFilePath = path.join(uploadDir, originalFilename); // Initial file path (temp name)
+    const writeStream = fs.createWriteStream(tempFilePath);
 
     console.log("📥 Upload started...");
 
@@ -457,14 +448,29 @@ const filePath = path.join(uploadDir, originalFilename); // Use filename as is
         console.log(`✅ Upload complete. Total size: ${(receivedBytes / (1024 * 1024)).toFixed(2)}MB`);
 
         try {
-            const result = await uploadToTeraBox(filePath, req.headers['filename'] || 'uploaded_file');
+            // Rename file before uploading to TeraBox
+            const timestamp = Date.now();
+            const newFileName = `${timestamp}-${originalFilename}`;
+            const newFilePath = path.join(uploadDir, newFileName);
+
+            fs.renameSync(tempFilePath, newFilePath);
+            console.log(`📁 Renamed file to: ${newFileName}`);
+
+            // Upload to TeraBox
+            const result = await uploadToTeraBox(newFilePath, newFileName);
 
             if (!result.success) {
                 console.error("❌ Upload failed:", result.error);
                 return res.status(500).json({ success: false, message: result.error || "Upload failed." });
             }
 
-            res.json(result);
+            // Respond with details
+            res.json({
+                success: true,
+                fileName: newFileName,
+                shareUrl: result.link
+            });
+
         } catch (error) {
             console.error("❌ Server error:", error);
             res.status(500).json({ success: false, message: "Internal server error." });
@@ -476,6 +482,7 @@ const filePath = path.join(uploadDir, originalFilename); // Use filename as is
         res.status(500).json({ success: false, message: "Upload interrupted." });
     });
 });
+
 app.get('/download', async (req, res) => {
     const { filename } = req.query;
     if (!filename) {
