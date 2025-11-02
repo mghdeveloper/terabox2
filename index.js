@@ -1,113 +1,141 @@
+// server.js
 const express = require("express");
+const multer = require("multer");
+const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
-const axios = require("axios");
+const FormData = require("form-data");
 const cors = require("cors");
 
 const app = express();
+app.use(cors()); // Allow all CORS
 
-// === Enable CORS for all origins ===
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// ============================
+// CONFIGURATION
+// ============================
+const APP_ID = "250528";
+const JS_TOKEN = "5DC263D8AA4BDE275E023FB17E801FBA870A9732ECFECF8D6488783A69136EC55BC38F16311018A009B1029EA142D1CD0F11B77E35EDDC3E09E7F9C791F1BB43";
+const DP_LOGID = "88945700695386130051";
+const BDSTOKEN = "49f3f89dbff9c3284888f118e9061d19";
+const COOKIE_STRING = 'browserid=CpaFTbGSs3HeO3SFHcqa4CRzaT4vlD7HVDl5Og-UF0SptpD...'; // truncated for brevity
 
-// === Configuration ===
-const cacheDir = path.join(__dirname, "m3u8_cache");
-const logDir = path.join(__dirname, "logs");
-const logFile = path.join(logDir, "stream_errors.log");
+const HEADERS = {
+  "Accept": "application/json, text/plain, */*",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Connection": "keep-alive",
+  "Origin": "https://www.1024tera.com",
+  "Referer": "https://www.1024tera.com/main?category=all",
+  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 Version/18.5 Mobile/15E148 Safari/604.1",
+  "X-Requested-With": "XMLHttpRequest",
+  "Cookie": COOKIE_STRING
+};
 
-// Ensure directories exist
-if (!fs.existsSync(cacheDir)) fs.mkdirSync(cacheDir, { recursive: true });
-if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+// ============================
+// MULTER SETUP
+// ============================
+const upload = multer({ dest: "uploads/" });
 
-// === Helper: Log errors ===
-function logError(message) {
-  const time = new Date().toISOString().replace("T", " ").split(".")[0];
-  fs.appendFileSync(logFile, `[${time}] ${message}\n`);
+// ============================
+// HELPER FUNCTION
+// ============================
+async function postRequest(url, headers, data, isFile = false) {
+  if (isFile) {
+    return axios.post(url, data, { headers });
+  } else {
+    return axios.post(url, new URLSearchParams(data), { headers });
+  }
 }
 
-// === Cookie string ===
-const cookieString = `browserid=CpaFTbGSs3HeO3SFHcqa4CRzaT4vlD7HVDl5Og-UF0SptpDVu63cnwl3XBE=; lang=en; TSID=fu79RRYes2WHH3xyF7g4lGDdndhCu0yc; ...etc...`; // truncated for clarity
+// ============================
+// ROUTE: UPLOAD FILE TO TERABOX
+// ============================
+app.post("/upload", upload.single("file"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).send("❌ No file uploaded.");
 
-// === POST /upload ===
-app.post("/upload", async (req, res) => {
-  const { filename } = req.body;
-  if (!filename) {
-    return res.status(400).json({ success: false, message: "Missing 'filename' parameter." });
-  }
+    const filePath = req.file.path;
+    const ext = path.extname(req.file.originalname);
+    const timestamp = Date.now();
+    const newName = `${timestamp}${ext}`;
+    const savePath = path.join(__dirname, newName);
+    fs.renameSync(filePath, savePath);
 
-  const resolutions = ["M3U8_AUTO_360", "M3U8_AUTO_480", "M3U8_AUTO_720", "M3U8_AUTO_1080"];
-  const results = {};
+    const REMOTE_PATH = `/${newName}`;
+    const fileSize = fs.statSync(savePath).size;
+    const local_mtime = Math.floor(Date.now() / 1000);
 
-  for (const resolution of resolutions) {
-    const streamURL = `https://www.1024tera.com/api/streaming?path=${encodeURIComponent(
-      "/" + filename
-    )}&app_id=250528&clienttype=0&type=${resolution}&vip=0`;
+    // === STEP 1: PRECREATE ===
+    const precreateUrl = `https://www.1024tera.com/api/precreate?app_id=${APP_ID}&web=1&channel=dubox&clienttype=0&jsToken=${JS_TOKEN}&dp-logid=${DP_LOGID}`;
+    const precreateData = {
+      path: REMOTE_PATH,
+      autoinit: "1",
+      target_path: "/",
+      block_list: "[]",
+      size: fileSize.toString(),
+      file_limit_switch_v34: "true",
+      g_identity: "",
+      local_mtime: local_mtime.toString()
+    };
+    let response = await postRequest(precreateUrl, HEADERS, precreateData);
+    const uploadid = response.data.uploadid;
+    if (!uploadid) throw new Error("❌ Precreate failed");
 
-    try {
-      const response = await axios.get(streamURL, {
-        headers: {
-          Cookie: cookieString,
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
-          Accept: "*/*",
-          Referer: "https://www.1024tera.com/",
-        },
-        timeout: 60000,
-      });
+    // === STEP 2: UPLOAD FILE ===
+    const uploadUrl = `https://c-jp.1024tera.com/rest/2.0/pcs/superfile2?method=upload&app_id=${APP_ID}&channel=dubox&clienttype=0&web=1&path=${encodeURIComponent(REMOTE_PATH)}&uploadid=${uploadid}&uploadsign=0&partseq=0`;
+    const form = new FormData();
+    form.append("file", fs.createReadStream(savePath));
 
-      if (response.status === 200 && response.data.startsWith("#EXTM3U")) {
-        const modified = response.data
-          .split("\n")
-          .map((line) => {
-            line = line.trim();
-            if (line && !line.startsWith("#")) {
-              return `https://libby.onrender.com/proxy?url=${encodeURIComponent(line)}`;
-            }
-            return line;
-          })
-          .join("\n");
+    response = await postRequest(uploadUrl, { ...HEADERS, ...form.getHeaders() }, form, true);
+    const md5 = response.data.md5;
+    if (!md5) throw new Error("❌ Upload failed");
 
-        const safeFilename = filename.replace(/[^a-z0-9_\-]/gi, "_");
-        const filePath = path.join(cacheDir, `${safeFilename}_${resolution}.m3u8`);
-        fs.writeFileSync(filePath, modified);
+    // === STEP 3: CREATE FINAL FILE ===
+    const createUrl = `https://www.1024tera.com/api/create?isdir=0&rtype=1&bdstoken=${BDSTOKEN}&app_id=${APP_ID}&web=1&channel=dubox&clienttype=0&jsToken=${JS_TOKEN}&dp-logid=${parseInt(DP_LOGID)+2}`;
+    const createData = {
+      path: REMOTE_PATH,
+      size: fileSize.toString(),
+      uploadid,
+      target_path: "/",
+      block_list: JSON.stringify([md5]),
+      local_mtime: local_mtime.toString()
+    };
+    response = await postRequest(createUrl, { ...HEADERS, "Content-Type": "application/x-www-form-urlencoded" }, createData);
 
-        results[resolution] = { file: path.basename(filePath), status: response.status, url: streamURL };
-      } else {
-        throw new Error("Invalid or missing M3U8 content");
-      }
-    } catch (err) {
-      const errorMsg = err.message || "Unknown error";
-      logError(`Resolution: ${resolution} | URL: ${streamURL} | Error: ${errorMsg}`);
-      results[resolution] = {
-        file: null,
-        status: err.response?.status || 500,
-        url: streamURL,
-        error: errorMsg,
-      };
+    fs.unlinkSync(savePath); // delete local file
+
+    if (response.data.errno === 0) {
+      return res.json({ success: true, remotePath: REMOTE_PATH });
+    } else {
+      throw new Error("⚠️ Create step failed");
     }
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
   }
-
-  return res.json({ success: true, cachedFiles: results });
 });
 
-// === GET /download?file=FILENAME ===
-app.get("/download", (req, res) => {
-  const file = req.query.file;
-  if (!file) {
-    return res.status(400).json({ success: false, message: "Missing 'file' query parameter." });
-  }
+// ============================
+// ROUTE: DOWNLOAD FILE
+// ============================
+app.get("/download", async (req, res) => {
+  try {
+    const filePath = req.query.path;
+    if (!filePath) return res.status(400).send("❌ Missing 'path' query param");
 
-  const filePath = path.join(cacheDir, file);
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ success: false, message: "File not found." });
-  }
+    // Example TeraBox download URL, may require token/cookies
+    const downloadUrl = `https://www.1024tera.com/api/download?path=${encodeURIComponent(filePath)}&bdstoken=${BDSTOKEN}`;
+    const response = await axios.get(downloadUrl, { headers: HEADERS, responseType: "stream" });
 
-  res.download(filePath, file, (err) => {
-    if (err) logError(`Download failed for ${file}: ${err.message}`);
-  });
+    res.setHeader("Content-Disposition", `attachment; filename="${path.basename(filePath)}"`);
+    response.data.pipe(res);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(err.message);
+  }
 });
 
-// === Start server ===
+// ============================
+// START SERVER
+// ============================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`✅ Stream server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
